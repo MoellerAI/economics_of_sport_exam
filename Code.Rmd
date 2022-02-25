@@ -1,0 +1,176 @@
+---
+title: "Sport_economics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library("readxl")
+library("vcd")
+library("dplyr")
+data <- read_excel('Data/Data.xlsx')
+```
+
+```{r}
+data
+```
+## Distribution of goals
+
+
+goodfit(data$Total_goals, type="poisson", method="ML")
+
+
+```{r}
+GoF <- goodfit(data$Total_goals, type = "poisson", method = "ML")
+summary(GoF) 
+```
+
+## Home Bias
+
+```{r}
+ t.test(data$FTHG, data$FTAG)
+```
+
+
+```{r}
+ mean(data$FTHG)
+```
+
+```{r}
+ mean(data$FTAG)
+```
+
+```{r}
+ table(data$FTR)/length(data$FTR)
+```
+
+
+## Building a Goal Model
+
+```{r}
+
+data$Date2 <- as.Date( as.character(data$Date), "%Y-%m-%d")
+train_data <- subset(data, Date2 < as.Date("2020-08-21") )
+test_data <- subset(data, Date2 >= as.Date("2020-08-21") )
+
+
+train_model <- rbind(data.frame(goals=train_data$FTHG, 
+team=train_data$HomeTeam, opponent=train_data$AwayTeam, home=1), 
+                     data.frame(goals=train_data$FTAG, 
+team=train_data$AwayTeam, opponent=train_data$HomeTeam, home=0)) 
+
+test_model <- rbind(data.frame(goals=test_data$FTHG, 
+team=test_data$HomeTeam, opponent=test_data$AwayTeam, home=1), 
+                     data.frame(goals=test_data$FTAG, 
+team=test_data$AwayTeam, opponent=test_data$HomeTeam, home=0)) 
+
+
+model <- glm(goals~team+opponent+home, family='poisson', data = train_model) 
+summary(model) 
+```
+
+```{r}
+ dim(train_data)
+```
+
+```{r}
+ dim(test_data)
+```
+```{r}
+#sort(data$HomeTeam)
+drop1(model,test="Chisq") 
+```
+
+```{r}
+predict(model, 
+        data.frame(home=1, team="Paris SG", 
+                   opponent="Nice"), type="response")
+```
+
+```{r}
+predict(model, 
+        data.frame(home=1, team="Nice", 
+                   opponent="Paris SG"), type="response")
+
+```
+
+```{r}
+simulate_match <- function(foot_model, homeTeam, awayTeam, max_goals=10){
+  home_goals_avg <- predict(foot_model,
+                            data.frame(home=1, team=homeTeam, 
+                                      opponent=awayTeam), type="response")
+  away_goals_avg <- predict(foot_model, 
+                           data.frame(home=0, team=awayTeam, 
+                                      opponent=homeTeam), type="response")
+  dpois(0:max_goals, home_goals_avg) %o% dpois(0:max_goals, away_goals_avg) 
+}
+
+simulate_match(model, "Paris SG", "Nice", max_goals=10)
+```
+
+```{r}
+probabilities_match <- function(foot_model, homeTeam='', awayTeam, max_goals=10){
+  simulated_match <- simulate_match(foot_model, homeTeam, awayTeam, max_goals)
+  data.frame(Match=paste(homeTeam, " vs. ", awayTeam), 
+             homeTeam=sum(simulated_match[lower.tri(simulated_match)]), 
+             Draw=sum(diag(simulated_match)), 
+             awayTeam=sum(simulated_match[upper.tri(simulated_match)]))
+}
+
+probabilities_match(model, "Paris SG", "Nice", max_goals=10)
+```
+
+```{r}
+probabilities_match(model, "Lens", "Rennes", max_goals=20)
+```
+
+
+
+
+```{r}
+probabilities_match <- function(foot_model, max_goals=10, test=FALSE){
+  df <- data.frame(Match='', 
+               homeTeam='', 
+               Draw='', 
+               awayTeam='')
+      for (row in 1:nrow(test_model)) {
+        homeTeam=test_model[row, "team"]
+        awayTeam=test_model[row, "opponent"]
+        Match=paste(homeTeam, " vs. ", awayTeam)
+        simulated_match <- simulate_match(foot_model, homeTeam, awayTeam, max_goals)
+        df <- rbind(df, c(paste(homeTeam, " vs. ", awayTeam),
+                          sum(simulated_match[lower.tri(simulated_match)]),
+                          sum(diag(simulated_match)),
+                          sum(simulated_match[upper.tri(simulated_match)])
+                          ))
+      }
+  return(df)
+}
+probabilities_match(model, max_goals=10, test=FALSE)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
